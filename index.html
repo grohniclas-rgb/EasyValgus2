@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>PhysioMotion AI - Live Diagnostik</title>
+  <meta name="theme-color" content="#0284c7">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body { background: #0f172a; color: #f8fafc; padding: 10px; display: flex; flex-direction: column; gap: 10px; max-width: 500px; margin: 0 auto; }
+
+    header { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #334155; }
+    h1 { font-size: 1.1rem; color: #38bdf8; }
+
+    .nav-tabs { display: flex; gap: 6px; margin-bottom: 5px; overflow-x: auto; }
+    .tab-btn { flex: 1; min-width: 70px; padding: 8px; background: #1e293b; border: 1px solid #334155; color: #94a3b8; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.8rem; text-align: center; }
+    .tab-btn.active { background: #0284c7; color: #fff; border-color: #38bdf8; }
+
+    .tab-content { display: none; flex-direction: column; gap: 10px; }
+    .tab-content.active { display: flex; }
+
+    .viewport-container { position: relative; width: 100%; aspect-ratio: 9 / 16; background: #000; border-radius: 12px; overflow: hidden; touch-action: none; border: 1px solid #334155; display: flex; align-items: center; justify-content: center; }
+    video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+
+    video::-webkit-media-controls-overlay-play-button { display: none !important; }
+    video::-webkit-media-controls-start-playback-button { display: none !important; }
+    video.mirrored { transform: scaleX(-1); }
+
+    .controls-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .test-buttons-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+    .test-buttons-grid .full-width { grid-column: span 2; }
+
+    .btn { padding: 10px; background: #334155; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; text-align: center; font-size: 0.85rem; }
+    .btn-accent { background: #0284c7; }
+    .btn-success { background: #16a34a; }
+    .btn-danger { background: #dc2626; }
+
+    .btn-test { background: #0e7490; font-size: 0.75rem; padding: 8px 4px; border: 1px solid #0891b2; }
+    .btn-test.recording { background: #dc2626; animation: pulse 1.5s infinite; }
+    .btn-test.has-video { border-color: #4ade80; background: #065f46; }
+
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+    .valgus-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .valgus-box { background: #0f172a; padding: 6px; border-radius: 6px; text-align: center; }
+    .valgus-title { font-size: 0.7rem; color: #94a3b8; margin-bottom: 2px; }
+    .valgus-val { font-size: 1rem; font-weight: bold; color: #38bdf8; }
+
+    .custom-player-bar { display: flex; align-items: center; gap: 8px; background: #1e293b; padding: 8px 12px; border-radius: 8px; }
+    .custom-player-bar input[type="range"] { flex: 1; }
+
+    input[type="range"] { width: 100%; }
+
+    .form-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+    .form-group label { font-size: 0.8rem; color: #94a3b8; }
+    .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #334155; background: #1e293b; color: #fff; font-size: 0.85rem; }
+
+    .data-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 0.8rem; }
+    .data-table th, .data-table td { padding: 4px; text-align: left; }
+    .data-table input { width: 100%; padding: 6px; background: #0f172a; border: 1px solid #334155; color: #38bdf8; border-radius: 4px; text-align: center; }
+
+    #pdf-template { background: #ffffff; color: #0f172a; padding: 15px; border-radius: 8px; font-size: 9pt; }
+    .pdf-header { border-bottom: 2px solid #0284c7; padding-bottom: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; }
+    .pdf-table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+    .pdf-table th { background: #0f172a; color: #fff; padding: 5px; text-align: left; font-size: 8pt; }
+    .pdf-table td { border-bottom: 1px solid #cbd5e1; padding: 5px; font-size: 8pt; }
+
+    #recIndicator { position: absolute; top: 8px; right: 8px; background: #dc2626; color: #fff; font-size: 0.7rem; font-weight: bold; padding: 4px 8px; border-radius: 4px; display: none; z-index: 10; animation: pulse 1s infinite; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>PhysioMotion PWA</h1>
+    <span id="status" style="font-size:0.75rem; color:#4ade80;">Bereit</span>
+  </header>
+
+  <div class="nav-tabs">
+    <button class="tab-btn active" onclick="switchTab('live')">Live</button>
+    <button class="tab-btn" onclick="switchTab('analysis')">Analyse</button>
+    <button class="tab-btn" onclick="switchTab('compare')">Vergleich</button>
+    <button class="tab-btn" onclick="switchTab('report')">PDF</button>
+  </div>
+
+  <!-- TAB 1: LIVE TRACKING -->
+  <div id="tab-live" class="tab-content active">
+    <div class="viewport-container">
+      <video id="webcam" playsinline muted></video>
+      <canvas id="output_canvas"></canvas>
+      <div id="recIndicator">● REC</div>
+    </div>
+
+    <div style="background:#1e293b; padding:8px; border-radius:8px; display:flex; flex-direction:column; gap:6px;">
+      <span style="font-size:0.75rem; color:#94a3b8; font-weight:bold;">Test aufnehmen (Start / Stopp):</span>
+      <div class="test-buttons-grid">
+        <button class="btn btn-test full-width" id="recBtn-squat" onclick="toggleTestRecord('squat')">🏋️ Squat (Beidbeinig)</button>
+        <button class="btn btn-test" id="recBtn-hopL" onclick="toggleTestRecord('hopL')">🦘 Single Jump (Links)</button>
+        <button class="btn btn-test" id="recBtn-hopR" onclick="toggleTestRecord('hopR')">🦘 Single Jump (Rechts)</button>
+        <button class="btn btn-test" id="recBtn-dropL" onclick="toggleTestRecord('dropL')">⬇️ Drop Jump (Links)</button>
+        <button class="btn btn-test" id="recBtn-dropR" onclick="toggleTestRecord('dropR')">⬇️ Drop Jump (Rechts)</button>
+      </div>
+    </div>
+
+    <div class="controls-grid">
+      <button class="btn btn-accent" id="toggleCamera">Kamera Wechseln</button>
+      <button class="btn btn-danger" id="generalRecordBtn">Freie Aufnahme</button>
+    </div>
+  </div>
+
+  <!-- TAB 2: ANALYSE & VALGUS DIAGNOSTIK -->
+  <div id="tab-analysis" class="tab-content">
+    <div class="viewport-container">
+      <video id="recordedPlayer" playsinline muted></video>
+      <canvas id="editorCanvas"></canvas>
+    </div>
+    
+    <div class="controls-grid" style="margin-top: -4px;">
+      <button class="btn btn-test" style="background:#16a34a; border-color:#15803d; padding: 6px;" onclick="saveCurrentAngle()">💾 Winkel Speichern</button>
+      <button class="btn btn-test" style="background:#dc2626; border-color:#b91c1c; padding: 6px;" onclick="clearManualDrawing()">🗑 Zeichnung verwerfen</button>
+    </div>
+
+    <div style="background:#1e293b; padding:8px; border-radius:8px; display:flex; flex-direction:column; gap:6px;">
+      <span style="font-size:0.75rem; color:#94a3b8; font-weight:bold;">Aufgezeichnetes Video wählen:</span>
+      <div class="test-buttons-grid">
+        <button class="btn btn-test full-width" id="selectBtn-squat" onclick="loadRecordedVideo('squat')">🏋️ Squat</button>
+        <button class="btn btn-test" id="selectBtn-hopL" onclick="loadRecordedVideo('hopL')">🦘 Jump (L)</button>
+        <button class="btn btn-test" id="selectBtn-hopR" onclick="loadRecordedVideo('hopR')">🦘 Jump (R)</button>
+        <button class="btn btn-test" id="selectBtn-dropL" onclick="loadRecordedVideo('dropL')">⬇️ Drop (L)</button>
+        <button class="btn btn-test" id="selectBtn-dropR" onclick="loadRecordedVideo('dropR')">⬇️ Drop (R)</button>
+      </div>
+    </div>
+
+    <div class="valgus-card">
+      <div class="valgus-box">
+        <div class="valgus-title">LINKS Max Valgus</div>
+        <div class="valgus-val" id="valgusDisplayL">0°</div>
+      </div>
+      <div class="valgus-box">
+        <div class="valgus-title">RECHTS Max Valgus</div>
+        <div class="valgus-val" id="valgusDisplayR">0°</div>
+      </div>
+    </div>
+
+    <div class="custom-player-bar">
+      <button class="btn btn-accent" style="padding:4px 10px; font-size:0.8rem;" id="playPauseBtn" onclick="togglePlayPause('recordedPlayer', 'playPauseBtn')">▶ Play</button>
+      <input type="range" id="videoSeeker" min="0" value="0" step="0.01" oninput="seekVideo('recordedPlayer', this.value)">
+      <button class="btn" style="padding:4px 8px; font-size:0.7rem;" onclick="resetValgusStats()">Reset</button>
+    </div>
+  </div>
+
+  <!-- TAB 3: VERGLEICH -->
+  <div id="tab-compare" class="tab-content">
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <div class="viewport-container">
+            <video id="compVideo1" playsinline muted></video>
+            <canvas id="compCanvas1"></canvas>
+        </div>
+        <input type="range" id="seekComp1" min="0" value="0" step="0.01" oninput="document.getElementById('compVideo1').currentTime = this.value">
+        <button class="btn btn-test" id="btnPlayComp1" onclick="togglePlayPause('compVideo1', 'btnPlayComp1')">▶ Play V1</button>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <div class="viewport-container">
+            <video id="compVideo2" playsinline muted></video>
+            <canvas id="compCanvas2"></canvas>
+        </div>
+        <input type="range" id="seekComp2" min="0" value="0" step="0.01" oninput="document.getElementById('compVideo2').currentTime = this.value">
+        <button class="btn btn-test" id="btnPlayComp2" onclick="togglePlayPause('compVideo2', 'btnPlayComp2')">▶ Play V2</button>
+      </div>
+    </div>
+
+    <button class="btn btn-accent" id="syncPlayBtn" style="padding: 12px; font-size: 0.9rem;" onclick="syncPlay()">▶ Beide Synchron Abspielen</button>
+
+    <div style="background:#1e293b; padding:8px; border-radius:8px;">
+      <span style="font-size:0.75rem; color:#94a3b8; font-weight:bold; display:block; margin-bottom:4px;">Videos aus Session laden:</span>
+      <div style="display:flex; gap:6px;">
+        <div class="form-group" style="flex:1; margin:0;">
+          <select id="selComp1" onchange="loadCompareVideo(1, this.value)">
+            <option value="">Video 1 wählen...</option>
+            <option value="squat">Squat</option>
+            <option value="hopL">Single Jump (L)</option>
+            <option value="hopR">Single Jump (R)</option>
+            <option value="dropL">Drop Jump (L)</option>
+            <option value="dropR">Drop Jump (R)</option>
+            <option value="general">Freie Aufnahme</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:1; margin:0;">
+          <select id="selComp2" onchange="loadCompareVideo(2, this.value)">
+            <option value="">Video 2 wählen...</option>
+            <option value="squat">Squat</option>
+            <option value="hopL">Single Jump (L)</option>
+            <option value="hopR">Single Jump (R)</option>
+            <option value="dropL">Drop Jump (L)</option>
+            <option value="dropR">Drop Jump (R)</option>
+            <option value="general">Freie Aufnahme</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls-grid">
+      <button class="btn btn-test" style="background:#334155; border-color:#475569;" onclick="document.getElementById('compInput1').click()">Datei Upload 1</button>
+      <button class="btn btn-test" style="background:#334155; border-color:#475569;" onclick="document.getElementById('compInput2').click()">Datei Upload 2</button>
+    </div>
+
+    <input type="file" id="compInput1" accept="video/*" style="display:none">
+    <input type="file" id="compInput2" accept="video/*" style="display:none">
+  </div>
+
+  <!-- TAB 4: PDF EXPORT -->
+  <div id="tab-report" class="tab-content">
+    <div class="form-group">
+      <label>Patientenname & Geburtsdatum:</label>
+      <div style="display:flex; gap:6px;">
+        <input type="text" id="patientName" placeholder="Max Mustermann" style="flex:2;">
+        <input type="date" id="patientDob" style="flex:1;">
+      </div>
+    </div>
+
+    <div style="background:#1e293b; padding:10px; border-radius:8px;">
+      <h3 style="font-size:0.85rem; color:#38bdf8; margin-bottom: 8px;">Manuelle Eingabe & Ausgangsstellung</h3>
+      <p style="font-size:0.7rem; color:#94a3b8; margin-bottom:8px;">Aufgezeichnete Werte werden hier automatisch eingetragen.</p>
+      <table class="data-table">
+        <tr>
+          <th>Test</th>
+          <th>Ausgangsst.</th>
+          <th>Valgus L (°)</th>
+          <th>Valgus R (°)</th>
+        </tr>
+        <tr>
+          <td>Squat</td>
+          <td><input type="text" id="in_squat_pos" placeholder="Unterstützungsfl."></td>
+          <td><input type="number" id="in_squat_L" placeholder="0"></td>
+          <td><input type="number" id="in_squat_R" placeholder="0"></td>
+        </tr>
+        <tr>
+          <td>S. Leg Jump</td>
+          <td><input type="text" id="in_hop_pos" placeholder="Entfernung"></td>
+          <td><input type="number" id="in_hop_L" placeholder="0"></td>
+          <td><input type="number" id="in_hop_R" placeholder="0"></td>
+        </tr>
+        <tr>
+          <td>Drop Jump</td>
+          <td><input type="text" id="in_drop_pos" placeholder="Höhe"></td>
+          <td><input type="number" id="in_drop_L" placeholder="0"></td>
+          <td><input type="number" id="in_drop_R" placeholder="0"></td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="form-group">
+      <label>Therapeutische Notizen / Befund:</label>
+      <textarea id="therapistNotes" rows="2" placeholder="Zusätzliche Befunde hier eintragen..."></textarea>
+    </div>
+
+    <button class="btn btn-success" onclick="generatePDF()">PDF Aktualisieren & Speichern</button>
+
+    <div style="margin-top: 10px;">
+      <h3 style="font-size:0.85rem; color:#94a3b8; margin-bottom: 6px;">Vorschau Dokument:</h3>
+      <div id="pdf-template">
+        <div class="pdf-header">
+          <div>
+            <h2 style="color:#0284c7; margin:0; font-size:12pt;">PhysioMotion AI</h2>
+            <div style="font-size:7.5pt; color:#64748b;">Dynamische Beinachsen- & Valgusdiagnostik</div>
+          </div>
+          <div style="text-align:right; font-size:7.5pt;">
+            <strong id="pdfDate">--</strong>
+          </div>
+        </div>
+        <p><strong>Patient/in:</strong> <span id="pdfPatientName">-</span> | <strong>Geb.:</strong> <span id="pdfPatientDob">-</span></p>
+        <h4 style="margin-top:10px; color:#0284c7; font-size:8.5pt;">Dynamische Bewegungstests (Max. Knie-Valgus)</h4>
+        <table class="pdf-table">
+          <thead>
+            <tr>
+              <th>Test-Verfahren</th>
+              <th>Ausgangsstellung</th>
+              <th>Valgus Links</th>
+              <th>Valgus Rechts</th>
+              <th>Differenz</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Squat</td>
+              <td id="pdfSquatPos">-</td>
+              <td id="pdfSquatL">-</td>
+              <td id="pdfSquatR">-</td>
+              <td id="pdfSquatDiff">-</td>
+            </tr>
+            <tr>
+              <td>Single Leg Jump</td>
+              <td id="pdfHopPos">-</td>
+              <td id="pdfHopL">-</td>
+              <td id="pdfHopR">-</td>
+              <td id="pdfHopDiff">-</td>
+            </tr>
+            <tr>
+              <td>Single Leg Drop Jump</td>
+              <td id="pdfDropPos">-</td>
+              <td id="pdfDropL">-</td>
+              <td id="pdfDropR">-</td>
+              <td id="pdfDropDiff">-</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="background:#f8fafc; border-left:3px solid #0284c7; padding:6px; margin-top:8px;">
+          <strong>Therapeutischer Befund:</strong>
+          <p id="pdfNotes" style="margin-top:2px; font-size:8pt;">Keine Notizen erfasst.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ─── STATE ───────────────────────────────────────────────────────────────────
+    let currentTab = 'live';
+    let facingMode = 'user';
+
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let isRecording = false;
+    let currentRecordingKey = null;
+    let canvasStream = null;          
+    let stopResolve = null;           
+
+    let recMaxValgusL = 0;
+    let recMaxValgusR = 0;
+
+    const recordedVideos = { squat: null, hopL: null, hopR: null, dropL: null, dropR: null, general: null };
+
+    // --- ZEIchnungs & Winkel Speicher State ---
+    const savedAngles = { squat: [], hopL: [], hopR: [], dropL: [], dropR: [], general: [] };
+    let currentAnalysisKey = null; 
+    let manualPoints = []; 
+    let draggingPointIndex = -1; // Speichert, welcher Punkt gerade gezogen wird
+    let compKey1 = null;
+    let compKey2 = null;
+
+    // ─── POSE SETUP ──────────────────────────────────────────────────────────────
+    const videoElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+
+    const pose = new Pose({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+    });
+    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
+    pose.onResults(onPoseResults);
+
+    // ─── CAMERA ──────────────────────────────────────────────────────────────────
+    let cameraInstance = null;
+    let cameraReady = false;
+
+    function startCamera() {
+      cameraReady = false;
+      document.getElementById('status').textContent = 'Kamera startet…';
+
+      if (cameraInstance) {
+        try { cameraInstance.stop(); } catch (_) {}
+        cameraInstance = null;
+      }
+
+      if (facingMode === 'user') {
+        videoElement.classList.add('mirrored');
+      } else {
+        videoElement.classList.remove('mirrored');
+      }
+
+      cameraInstance = new Camera(videoElement, {
+        onFrame: async () => {
+          if (currentTab === 'live') {
+            await pose.send({ image: videoElement });
+          }
+        },
+        facingMode: facingMode,
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      });
+
+      cameraInstance.start()
+        .then(() => {
+          cameraReady = true;
+          document.getElementById('status').textContent = 'Bereit';
+          canvasStream = canvasElement.captureStream(30);
+        })
+        .catch((err) => {
+          document.getElementById('status').textContent = 'Kamerafehler';
+          console.error('Camera start error:', err);
+        });
+    }
+
+    document.getElementById('toggleCamera').addEventListener('click', () => {
+      if (isRecording) {
+        alert('Bitte erst die laufende Aufnahme stoppen.');
+        return;
+      }
+      facingMode = (facingMode === 'user') ? 'environment' : 'user';
+      startCamera();
+    });
+
+    // ─── VALGUS HELPERS ──────────────────────────────────────────────────────────
+    function calculateAngle(p1, p2, p3) {
+      const radians = Math.atan2(p3.y - p2.y, p3.x - p2.x) - Math.atan2(p1.y - p2.y, p1.x - p2.x);
+      let angle = Math.abs((radians * 180.0) / Math.PI);
+      if (angle > 180.0) angle = 360 - angle;
+      return Math.round(angle);
+    }
+
+    function evaluateValgus(hip, knee, ankle, isLeftLeg) {
+      const fppa = calculateAngle(hip, knee, ankle);
+      const deviation = 180 - fppa;
+      if (deviation <= 3) return 0;
+      const lineXAtKneeY = hip.x + (knee.y - hip.y) * (ankle.x - hip.x) / (ankle.y - hip.y);
+      const isMedial = isLeftLeg ? (knee.x < lineXAtKneeY) : (knee.x > lineXAtKneeY);
+      return isMedial ? deviation : 0;
+    }
+
+    function resetValgusStats() {
+      recMaxValgusL = 0;
+      recMaxValgusR = 0;
+      document.getElementById('valgusDisplayL').textContent = '0°';
+      document.getElementById('valgusDisplayR').textContent = '0°';
+    }
+
+    // ─── POSE RESULTS (Verbesserte Sichtbarkeit) ─────────────────────────────────
+    function onPoseResults(results) {
+      const w = videoElement.videoWidth || 1280;
+      const h = videoElement.videoHeight || 720;
+
+      if (canvasElement.width !== w) canvasElement.width = w;
+      if (canvasElement.height !== h) canvasElement.height = h;
+
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, w, h);
+
+      const isMirrored = (facingMode === 'user' && currentTab === 'live');
+      if (isMirrored) {
+        canvasCtx.translate(w, 0);
+        canvasCtx.scale(-1, 1);
+      }
+      canvasCtx.drawImage(results.image, 0, 0, w, h);
+      canvasCtx.setTransform(1, 0, 0, 1, 0, 0); 
+
+      if (results.poseLandmarks) {
+        const lm = results.poseLandmarks;
+        const getX = (p) => isMirrored ? (1 - p.x) * w : p.x * w;
+        const getY = (p) => p.y * h;
+        const vis = (p) => p && p.visibility > 0.6;
+
+        if (vis(lm[23]) && vis(lm[25]) && vis(lm[27])) {
+          const v = evaluateValgus(lm[23], lm[25], lm[27], true);
+          if (v > recMaxValgusL) {
+            recMaxValgusL = Math.round(v);
+            document.getElementById('valgusDisplayL').textContent = `${recMaxValgusL}°`;
+          }
+        }
+        if (vis(lm[24]) && vis(lm[26]) && vis(lm[28])) {
+          const v = evaluateValgus(lm[24], lm[26], lm[28], false);
+          if (v > recMaxValgusR) {
+            recMaxValgusR = Math.round(v);
+            document.getElementById('valgusDisplayR').textContent = `${recMaxValgusR}°`;
+          }
+        }
+
+        const joints = [
+          { p1: lm[11], p2: lm[23], p3: lm[25] }, { p1: lm[12], p2: lm[24], p3: lm[26] },
+          { p1: lm[23], p2: lm[25], p3: lm[27] }, { p1: lm[24], p2: lm[26], p3: lm[28] },
+          { p1: lm[25], p2: lm[27], p3: lm[31] }, { p1: lm[26], p2: lm[28], p3: lm[32] }
+        ];
+        
+        joints.forEach(j => {
+          if (vis(j.p1) && vis(j.p2) && vis(j.p3)) {
+            canvasCtx.beginPath();
+            canvasCtx.moveTo(getX(j.p1), getY(j.p1));
+            canvasCtx.lineTo(getX(j.p2), getY(j.p2));
+            canvasCtx.lineTo(getX(j.p3), getY(j.p3));
+            canvasCtx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+            canvasCtx.lineWidth = 3;
+            canvasCtx.stroke();
+            
+            canvasCtx.beginPath();
+            canvasCtx.arc(getX(j.p2), getY(j.p2), 5, 0, 2 * Math.PI);
+            canvasCtx.fillStyle = '#38bdf8';
+            canvasCtx.fill();
+            canvasCtx.strokeStyle = '#fff';
+            canvasCtx.lineWidth = 1.5;
+            canvasCtx.stroke();
+          }
+        });
+      }
+      canvasCtx.restore();
+    }
+
+    // ─── MANUELLE WINKEL-ZEICHNUNG (ANALYSE TAB) ─────────────────────────────────
+    const editorCanvas = document.getElementById('editorCanvas');
+    const editorCtx = editorCanvas.getContext('2d');
+
+    function getNormalizedCoords(e, canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const absX = (e.clientX - rect.left) * scaleX;
+      const absY = (e.clientY - rect.top) * scaleY;
+      return { nx: absX / canvas.width, ny: absY / canvas.height };
+    }
+
+    // Pointer Down (Neuen Punkt setzen ODER existierenden greifen)
+    editorCanvas.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      
+      const rect = editorCanvas.getBoundingClientRect();
+      const scaleX = editorCanvas.width / rect.width;
+      const scaleY = editorCanvas.height / rect.height;
+      const clickX = (e.clientX - rect.left) * scaleX;
+      const clickY = (e.clientY - rect.top) * scaleY;
+
+      let clickedExisting = false;
+      
+      // 1. Prüfen, ob wir nah an einem existierenden Punkt klicken (Toleranz: 30 Pixel)
+      for (let i = 0; i < manualPoints.length; i++) {
+        const ptX = manualPoints[i].nx * editorCanvas.width;
+        const ptY = manualPoints[i].ny * editorCanvas.height;
+        if (Math.hypot(clickX - ptX, clickY - ptY) < 30) {
+          draggingPointIndex = i;
+          clickedExisting = true;
+          break;
+        }
+      }
+
+      // 2. Wenn ins Leere geklickt wird
+      if (!clickedExisting) {
+        if (manualPoints.length >= 3) {
+            manualPoints = []; // Reset, wenn schon 3 da sind und man daneben klickt
+        }
+        manualPoints.push(getNormalizedCoords(e, editorCanvas));
+        draggingPointIndex = manualPoints.length - 1; // Erlaubt sofortiges Ziehen nach dem Klick
+      }
+      
+      drawAnalysisCanvas();
+    });
+
+    // Pointer Move (Gegriffenen Punkt verschieben)
+    editorCanvas.addEventListener('pointermove', (e) => {
+      if (draggingPointIndex === -1) return;
+      e.preventDefault();
+      
+      // Update die Position des aktuell gezogenen Punktes
+      manualPoints[draggingPointIndex] = getNormalizedCoords(e, editorCanvas);
+      drawAnalysisCanvas();
+    });
+
+    // Pointer Up/Leave (Loslassen)
+    editorCanvas.addEventListener('pointerup', () => { draggingPointIndex = -1; });
+    editorCanvas.addEventListener('pointercancel', () => { draggingPointIndex = -1; });
+    editorCanvas.addEventListener('pointerleave', () => { draggingPointIndex = -1; });
+
+
+    function saveCurrentAngle() {
+      if (manualPoints.length !== 3) {
+          alert("Bitte setze exakt 3 Punkte, um den Winkel zu speichern.");
+          return;
+      }
+      if (!currentAnalysisKey) return;
+      
+      const t = document.getElementById('recordedPlayer').currentTime;
+      const pts = manualPoints.map(p => ({ x: p.nx * 1000, y: p.ny * 1000 }));
+      const angle = calculateAngle(pts[0], pts[1], pts[2]);
+      
+      savedAngles[currentAnalysisKey].push({
+          time: t,
+          points: [...manualPoints],
+          angle: angle
+      });
+      
+      manualPoints = []; 
+      drawAnalysisCanvas(); 
+    }
+
+    function clearManualDrawing() {
+      manualPoints = [];
+      drawAnalysisCanvas();
+    }
+
+    function drawAngleObj(ctx, canvas, { points, angle, opacity, isSaved }) {
+       if (!points || points.length === 0) return;
+       ctx.save();
+       ctx.globalAlpha = opacity;
+       
+       const pts = points.map(p => ({ x: p.nx * canvas.width, y: p.ny * canvas.height }));
+
+       ctx.fillStyle = isSaved ? '#facc15' : '#f43f5e';
+       pts.forEach((pt, i) => {
+           ctx.beginPath(); ctx.arc(pt.x, pt.y, 6, 0, Math.PI*2); ctx.fill();
+           if(!isSaved) {
+               ctx.fillStyle = '#ffffff';
+               ctx.font = 'bold 12px sans-serif';
+               ctx.fillText(`P${i+1}`, pt.x + 8, pt.y - 8);
+               ctx.fillStyle = '#f43f5e';
+           }
+       });
+
+       if (pts.length >= 2) {
+           ctx.beginPath();
+           ctx.moveTo(pts[0].x, pts[0].y);
+           ctx.lineTo(pts[1].x, pts[1].y);
+           if (pts.length === 3) ctx.lineTo(pts[2].x, pts[2].y);
+           ctx.strokeStyle = isSaved ? '#facc15' : '#f43f5e';
+           ctx.lineWidth = 3;
+           ctx.stroke();
+       }
+
+       if (pts.length === 3) {
+           const a = angle !== undefined ? angle : calculateAngle(pts[0], pts[1], pts[2]);
+           ctx.fillStyle = '#ffffff';
+           ctx.font = 'bold 16px sans-serif';
+           ctx.fillText(`${a}°`, pts[1].x + 12, pts[1].y + 24);
+       }
+       ctx.restore();
+    }
+
+    function drawAnalysisCanvas() {
+      const vid = document.getElementById('recordedPlayer');
+      if (editorCanvas.width !== vid.clientWidth) editorCanvas.width = vid.clientWidth;
+      if (editorCanvas.height !== vid.clientHeight) editorCanvas.height = vid.clientHeight;
+      
+      editorCtx.clearRect(0, 0, editorCanvas.width, editorCanvas.height);
+
+      drawAngleObj(editorCtx, editorCanvas, { points: manualPoints, opacity: 1, isSaved: false });
+
+      if (!currentAnalysisKey) return;
+      const t = vid.currentTime;
+      
+      savedAngles[currentAnalysisKey].forEach(angleObj => {
+         const dt = Math.abs(t - angleObj.time);
+         if (dt <= 1.0) {
+             const opacity = 1 - dt; 
+             drawAngleObj(editorCtx, editorCanvas, { points: angleObj.points, angle: angleObj.angle, opacity: opacity, isSaved: true });
+         }
+      });
+    }
+
+    // ─── RECORDING ───────────────────────────────────────────────────────────────
+    function toggleTestRecord(testKey) {
+      if (isRecording) {
+        if (currentRecordingKey === testKey) stopRecording(); 
+        else stopRecordingThen(() => startRecording(testKey));
+      } else startRecording(testKey);
+    }
+
+    function getBestMimeType() {
+      const types = ['video/webm; codecs=vp9', 'video/webm; codecs=vp8', 'video/webm', 'video/mp4'];
+      for (const t of types) if (MediaRecorder.isTypeSupported(t)) return t;
+      return '';
+    }
+
+    function startRecording(key) {
+      if (!cameraReady) return alert('Kamera noch nicht bereit. Bitte kurz warten.');
+      if (isRecording) return; 
+
+      resetValgusStats();
+      recordedChunks = [];
+      currentRecordingKey = key;
+
+      if (!canvasStream || !canvasStream.active) canvasStream = canvasElement.captureStream(30);
+      const mimeType = getBestMimeType();
+      
+      try { mediaRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : {}); } 
+      catch (e) { mediaRecorder = new MediaRecorder(canvasStream); }
+
+      mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
+      mediaRecorder.onstop = () => {
+        isRecording = false;
+        document.getElementById('recIndicator').style.display = 'none';
+
+        if (recordedVideos[key]) URL.revokeObjectURL(recordedVideos[key]);
+        const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/webm' });
+        recordedVideos[key] = URL.createObjectURL(blob);
+        recordedChunks = [];
+        
+        savedAngles[key] = []; 
+
+        const recBtn = document.getElementById(`recBtn-${key}`);
+        if (recBtn) { recBtn.classList.remove('recording'); recBtn.classList.add('has-video'); }
+        const selBtn = document.getElementById(`selectBtn-${key}`);
+        if (selBtn) selBtn.classList.add('has-video');
+
+        const savedL = recMaxValgusL;
+        const savedR = recMaxValgusR;
+        if (key === 'squat') { document.getElementById('in_squat_L').value = savedL; document.getElementById('in_squat_R').value = savedR; } 
+        else if (key === 'hopL') { document.getElementById('in_hop_L').value = savedL; } 
+        else if (key === 'hopR') { document.getElementById('in_hop_R').value = savedR; } 
+        else if (key === 'dropL') { document.getElementById('in_drop_L').value = savedL; } 
+        else if (key === 'dropR') { document.getElementById('in_drop_R').value = savedR; }
+
+        updatePDFPreview();
+
+        if (stopResolve) { const cb = stopResolve; stopResolve = null; setTimeout(cb, 100); } 
+        else { loadRecordedVideo(key); switchTab('analysis'); }
+
+        currentRecordingKey = null; mediaRecorder = null;
+      };
+
+      mediaRecorder.onerror = (e) => {
+        isRecording = false; document.getElementById('recIndicator').style.display = 'none';
+        const recBtn = document.getElementById(`recBtn-${key}`);
+        if (recBtn) recBtn.classList.remove('recording');
+        mediaRecorder = null; alert('Aufnahmefehler. Bitte erneut versuchen.');
+      };
+
+      mediaRecorder.start(100); 
+      isRecording = true;
+      const recBtn = document.getElementById(`recBtn-${key}`);
+      if (recBtn) recBtn.classList.add('recording');
+      document.getElementById('recIndicator').style.display = 'block';
+      document.getElementById('status').textContent = `● REC: ${key}`;
+    }
+
+    function stopRecording() {
+      if (mediaRecorder && isRecording) {
+        try { mediaRecorder.stop(); } catch (e) {}
+        document.getElementById('status').textContent = 'Verarbeite…';
+      }
+    }
+    
+    function stopRecordingThen(callback) {
+      if (!isRecording) { callback(); return; }
+      stopResolve = callback; stopRecording();
+    }
+
+    document.getElementById('generalRecordBtn').addEventListener('click', () => {
+      if (!isRecording) { startRecording('general'); document.getElementById('generalRecordBtn').textContent = '⏹ Stoppen'; } 
+      else { stopRecording(); document.getElementById('generalRecordBtn').textContent = 'Freie Aufnahme'; }
+    });
+
+    // ─── VIDEO PLAYBACK & COMPARE ──────────────────────────────────────────────────────────
+    function loadRecordedVideo(key) {
+      if (!recordedVideos[key]) return alert('Noch kein Video für diesen Test aufgenommen!');
+      currentAnalysisKey = key;
+      manualPoints = []; 
+      const player = document.getElementById('recordedPlayer');
+      player.src = recordedVideos[key];
+      player.load();
+      player.play().then(() => { document.getElementById('playPauseBtn').textContent = '❚❚ Pause'; }).catch(() => { document.getElementById('playPauseBtn').textContent = '▶ Play'; });
+    }
+
+    function loadCompareVideo(playerNum, key) {
+      if (!key) return;
+      if (!recordedVideos[key]) {
+        alert('Dieses Video wurde in der aktuellen Session noch nicht aufgenommen!');
+        document.getElementById('selComp' + playerNum).value = '';
+        return;
+      }
+      if (playerNum === 1) compKey1 = key;
+      else compKey2 = key;
+      
+      const vid = document.getElementById('compVideo' + playerNum);
+      vid.src = recordedVideos[key];
+      vid.load();
+    }
+    
+    function updateCompareCanvas(playerNum) {
+        const vid = document.getElementById('compVideo' + playerNum);
+        const canvas = document.getElementById('compCanvas' + playerNum);
+        const ctx = canvas.getContext('2d');
+
+        if (canvas.width !== vid.clientWidth) canvas.width = vid.clientWidth;
+        if (canvas.height !== vid.clientHeight) canvas.height = vid.clientHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const key = playerNum === 1 ? compKey1 : compKey2;
+        if (!key || !savedAngles[key]) return;
+
+        const t = vid.currentTime;
+        savedAngles[key].forEach(angleObj => {
+            const dt = Math.abs(t - angleObj.time);
+            if (dt <= 1.0) { 
+                const opacity = 1 - dt; 
+                drawAngleObj(ctx, canvas, { points: angleObj.points, angle: angleObj.angle, opacity: opacity, isSaved: true });
+            }
+        });
+    }
+
+    function togglePlayPause(videoId, btnId) {
+      const vid = document.getElementById(videoId);
+      const btn = btnId ? document.getElementById(btnId) : null;
+      if (vid.paused) { vid.play(); if (btn) btn.textContent = btn.textContent.replace('▶ Play', '❚❚ Pause'); } 
+      else { vid.pause(); if (btn) btn.textContent = btn.textContent.replace('❚❚ Pause', '▶ Play'); }
+    }
+
+    function seekVideo(videoId, val) { document.getElementById(videoId).currentTime = parseFloat(val); }
+
+    function syncPlay() {
+      const v1 = document.getElementById('compVideo1'), v2 = document.getElementById('compVideo2');
+      const b1 = document.getElementById('btnPlayComp1'), b2 = document.getElementById('btnPlayComp2');
+      const syncBtn = document.getElementById('syncPlayBtn');
+      if (v1.paused || v2.paused) {
+        v1.play(); v2.play();
+        if (b1) b1.textContent = '❚❚ Pause V1'; if (b2) b2.textContent = '❚❚ Pause V2';
+        if (syncBtn) syncBtn.textContent = '❚❚ Beide Pausieren';
+      } else {
+        v1.pause(); v2.pause();
+        if (b1) b1.textContent = '▶ Play V1'; if (b2) b2.textContent = '▶ Play V2';
+        if (syncBtn) syncBtn.textContent = '▶ Beide Synchron Abspielen';
+      }
+    }
+
+    // ─── VIDEO EVENT LISTENERS ───────────────────────────────────────────────────
+    const recordedPlayer = document.getElementById('recordedPlayer');
+    recordedPlayer.addEventListener('loadedmetadata', () => { document.getElementById('videoSeeker').max = recordedPlayer.duration; document.getElementById('videoSeeker').value = 0; });
+    recordedPlayer.addEventListener('timeupdate', () => { 
+        document.getElementById('videoSeeker').value = recordedPlayer.currentTime; 
+        drawAnalysisCanvas();
+    });
+    recordedPlayer.addEventListener('ended', () => { document.getElementById('playPauseBtn').textContent = '▶ Play'; });
+
+    const cv1 = document.getElementById('compVideo1'), sc1 = document.getElementById('seekComp1');
+    cv1.addEventListener('loadedmetadata', () => { sc1.max = cv1.duration; sc1.value = 0; });
+    cv1.addEventListener('timeupdate', () => { sc1.value = cv1.currentTime; updateCompareCanvas(1); });
+    cv1.addEventListener('ended', () => { document.getElementById('btnPlayComp1').textContent = '▶ Play V1'; });
+
+    const cv2 = document.getElementById('compVideo2'), sc2 = document.getElementById('seekComp2');
+    cv2.addEventListener('loadedmetadata', () => { sc2.max = cv2.duration; sc2.value = 0; });
+    cv2.addEventListener('timeupdate', () => { sc2.value = cv2.currentTime; updateCompareCanvas(2); });
+    cv2.addEventListener('ended', () => { document.getElementById('btnPlayComp2').textContent = '▶ Play V2'; });
+
+    document.getElementById('compInput1').addEventListener('change', (e) => { if (e.target.files[0]) { cv1.src = URL.createObjectURL(e.target.files[0]); cv1.load(); } });
+    document.getElementById('compInput2').addEventListener('change', (e) => { if (e.target.files[0]) { cv2.src = URL.createObjectURL(e.target.files[0]); cv2.load(); } });
+
+    // ─── PDF ─────────────────────────────────────────────────────────────────────
+    function updatePDFPreview() {
+      const getVal = (id) => { const v = document.getElementById(id).value; return v !== '' ? parseFloat(v) : null; };
+      const fmt = (v) => v !== null ? `${v}°` : '--°';
+      const diff = (l, r) => (l !== null && r !== null) ? `${Math.abs(l - r)}°` : '--';
+      const sqL = getVal('in_squat_L'), sqR = getVal('in_squat_R');
+      const hpL = getVal('in_hop_L'),   hpR = getVal('in_hop_R');
+      const dpL = getVal('in_drop_L'),  dpR = getVal('in_drop_R');
+
+      document.getElementById('pdfSquatPos').textContent  = document.getElementById('in_squat_pos').value || '--';
+      document.getElementById('pdfSquatL').textContent    = fmt(sqL); document.getElementById('pdfSquatR').textContent    = fmt(sqR); document.getElementById('pdfSquatDiff').textContent = diff(sqL, sqR);
+      document.getElementById('pdfHopPos').textContent    = document.getElementById('in_hop_pos').value || '--';
+      document.getElementById('pdfHopL').textContent      = fmt(hpL); document.getElementById('pdfHopR').textContent      = fmt(hpR); document.getElementById('pdfHopDiff').textContent   = diff(hpL, hpR);
+      document.getElementById('pdfDropPos').textContent   = document.getElementById('in_drop_pos').value || '--';
+      document.getElementById('pdfDropL').textContent     = fmt(dpL); document.getElementById('pdfDropR').textContent     = fmt(dpR); document.getElementById('pdfDropDiff').textContent  = diff(dpL, dpR);
+      document.getElementById('pdfDate').textContent = new Date().toLocaleDateString('de-DE');
+    }
+
+    function generatePDF() {
+      updatePDFPreview();
+      const name = document.getElementById('patientName').value || 'Patient';
+      document.getElementById('pdfPatientName').textContent = name;
+      document.getElementById('pdfPatientDob').textContent  = document.getElementById('patientDob').value || 'Nicht angegeben';
+      document.getElementById('pdfNotes').textContent       = document.getElementById('therapistNotes').value || 'Keine Notizen erfasst.';
+
+      html2pdf().set({ margin: 10, filename: `Befund_${name.replace(/\s+/g, '_')}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } }).from(document.getElementById('pdf-template')).save();
+    }
+
+    // ─── TAB SWITCHING ───────────────────────────────────────────────────────────
+    function switchTab(tabName) {
+      currentTab = tabName;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      const idx = { live: 0, analysis: 1, compare: 2, report: 3 }[tabName];
+      document.querySelectorAll('.tab-btn')[idx].classList.add('active');
+      document.getElementById(`tab-${tabName}`).classList.add('active');
+
+      if (tabName === 'live') { if (!cameraInstance || !cameraReady) startCamera(); }
+      if (tabName === 'report') updatePDFPreview();
+    }
+
+    startCamera();
+  </script>
+</body>
+</html>
